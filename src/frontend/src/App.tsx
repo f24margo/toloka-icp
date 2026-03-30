@@ -1502,11 +1502,49 @@ function ProfileTab({
   role,
   identity,
   onLogout,
+  actor,
 }: {
   role: UserRole | null;
   identity: { getPrincipal(): { toString(): string } } | null;
   onLogout: () => void;
+  actor: unknown;
 }) {
+  const [debugRole, setDebugRole] = useState<string | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugError, setDebugError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!actor || !identity) return;
+    console.log(
+      "[DEBUG] Calling getCallerUserRole directly, principal:",
+      identity.getPrincipal().toString(),
+    );
+    setDebugLoading(true);
+    setDebugError(null);
+    (actor as unknown as CommunityBackend)
+      .getCallerUserRole()
+      .then((result) => {
+        console.log(
+          "[DEBUG] getCallerUserRole result:",
+          JSON.stringify(result),
+        );
+        const label = !result
+          ? "null"
+          : "admin" in result
+            ? "admin"
+            : "user" in result
+              ? "user"
+              : "guest/unknown";
+        setDebugRole(label);
+        setDebugLoading(false);
+      })
+      .catch((err) => {
+        console.error("[DEBUG] getCallerUserRole error:", err);
+        setDebugError(String(err));
+        setDebugLoading(false);
+      });
+    // biome-ignore lint/correctness/useExhaustiveDependencies: actor is unknown type
+  }, [actor, identity]);
   if (!identity) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-4">
@@ -1572,6 +1610,35 @@ function ProfileTab({
         </CardContent>
       </Card>
 
+      <Card className="border-yellow-400 border-2">
+        <CardHeader>
+          <CardTitle className="text-sm text-yellow-700">
+            🔍 DEBUG: getCallerUserRole (пряме звернення до canister)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs space-y-1">
+          {debugLoading && (
+            <p className="text-muted-foreground">Завантаження...</p>
+          )}
+          {debugError && (
+            <p className="text-destructive font-mono">{debugError}</p>
+          )}
+          {debugRole !== null && !debugLoading && (
+            <p>
+              Роль з canister:{" "}
+              <code className="bg-muted px-1 rounded font-bold">
+                {debugRole}
+              </code>
+            </p>
+          )}
+          {!debugLoading && debugRole === null && !debugError && (
+            <p className="text-muted-foreground">Ще не завантажено</p>
+          )}
+          <p className="text-muted-foreground">
+            Principal: {identity?.getPrincipal().toString()}
+          </p>
+        </CardContent>
+      </Card>
       {isAdmin(role) && (
         <Card>
           <CardHeader>
@@ -1650,17 +1717,23 @@ export default function App() {
       queryFn: async () => {
         if (!actor || !identity) return null;
         // Initialize access control with admin token if present
-        try {
-          await withTimeout(
-            (
-              actor as unknown as CommunityBackend
-            )._initializeAccessControlWithSecret(adminSecret),
-            12000,
-          );
-        } catch {
-          // If init fails or times out, still try to get the role
+        if (adminSecret !== "") {
+          try {
+            await withTimeout(
+              (
+                actor as unknown as CommunityBackend
+              )._initializeAccessControlWithSecret(adminSecret),
+              12000,
+            );
+          } catch {
+            // If init fails or times out, still try to get the role
+          }
         }
         localStorage.removeItem("adminSecret");
+        console.log(
+          "[DEBUG] Calling getCallerUserRole, identity principal:",
+          identity?.getPrincipal().toString(),
+        );
         try {
           return await withTimeout(
             (actor as unknown as CommunityBackend).getCallerUserRole(),
@@ -1918,6 +1991,7 @@ export default function App() {
                   role={role}
                   identity={identity ?? null}
                   onLogout={handleLogout}
+                  actor={actor}
                 />
               </TabsContent>
               <TabsContent value="admin" className="mt-0">

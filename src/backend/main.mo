@@ -6,9 +6,7 @@ import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 
 actor class Community() = this {
-  let accessControlState = AccessControl.initState();
-  include MixinAuthorization(accessControlState);
-
+  // ── Types (must come before stable vars that reference them) ─────────────────
   public type NewsPost = { id: Nat; title: Text; body: Text; author: Principal; timestamp: Int };
   public type Announcement = { id: Nat; title: Text; text: Text; author: Principal; timestamp: Int };
   public type ForumTopic = { id: Nat; title: Text; body: Text; author: Principal; timestamp: Int };
@@ -17,6 +15,32 @@ actor class Community() = this {
   public type PollResults = { pollId: Nat; question: Text; options: [Text]; votes: [Nat]; userVoted: ?Nat };
   public type Event = { id: Nat; title: Text; description: Text; date: Text; location: Text; author: Principal; timestamp: Int };
   public type Service = { id: Nat; name: Text; category: Text; phone: Text; description: Text };
+  public type UserRole = AccessControl.UserRole;
+
+  // ── Stable storage (persists across upgrades) ──────────────────────────────
+  stable var stableAdminAssigned : Bool = false;
+  stable var stableUserRoles : [(Principal, UserRole)] = [];
+
+  stable var stableNewsCounter : Nat = 0;
+  stable var stableNews : [(Nat, NewsPost)] = [];
+  stable var stableAnnouncementCounter : Nat = 0;
+  stable var stableAnnouncements : [(Nat, Announcement)] = [];
+  stable var stableTopicCounter : Nat = 0;
+  stable var stableTopics : [(Nat, ForumTopic)] = [];
+  stable var stableReplyCounter : Nat = 0;
+  stable var stableReplies : [(Nat, ForumReply)] = [];
+  stable var stablePollCounter : Nat = 0;
+  stable var stablePolls : [(Nat, Poll)] = [];
+  stable var stablePollVoteCounts : [(Nat, [Nat])] = [];
+  stable var stableUserVoteMap : [(Text, Nat)] = [];
+  stable var stableEventCounter : Nat = 0;
+  stable var stableEvents : [(Nat, Event)] = [];
+  stable var stableServiceCounter : Nat = 0;
+  stable var stableServices : [(Nat, Service)] = [];
+
+  // ── In-memory state ────────────────────────────────────────────────────────
+  let accessControlState = AccessControl.initState();
+  include MixinAuthorization(accessControlState);
 
   var newsCounter : Nat = 0;
   var newsMap = Map.empty<Nat, NewsPost>();
@@ -28,7 +52,6 @@ actor class Community() = this {
   var replyMap = Map.empty<Nat, ForumReply>();
   var pollCounter : Nat = 0;
   var pollMap = Map.empty<Nat, Poll>();
-  // votes stored as [Nat] immutable, replaced on each vote
   var pollVoteCounts = Map.empty<Nat, [Nat]>();
   var userVoteMap = Map.empty<Text, Nat>();
   var eventCounter : Nat = 0;
@@ -36,6 +59,54 @@ actor class Community() = this {
   var serviceCounter : Nat = 0;
   var serviceMap = Map.empty<Nat, Service>();
 
+  // ── Upgrade hooks ──────────────────────────────────────────────────────────
+  system func preupgrade() {
+    stableAdminAssigned := accessControlState.adminAssigned;
+    stableUserRoles := accessControlState.userRoles.toArray();
+
+    stableNewsCounter := newsCounter;
+    stableNews := newsMap.toArray();
+    stableAnnouncementCounter := announcementCounter;
+    stableAnnouncements := announcementMap.toArray();
+    stableTopicCounter := topicCounter;
+    stableTopics := topicMap.toArray();
+    stableReplyCounter := replyCounter;
+    stableReplies := replyMap.toArray();
+    stablePollCounter := pollCounter;
+    stablePolls := pollMap.toArray();
+    stablePollVoteCounts := pollVoteCounts.toArray();
+    stableUserVoteMap := userVoteMap.toArray();
+    stableEventCounter := eventCounter;
+    stableEvents := eventMap.toArray();
+    stableServiceCounter := serviceCounter;
+    stableServices := serviceMap.toArray();
+  };
+
+  system func postupgrade() {
+    accessControlState.adminAssigned := stableAdminAssigned;
+    for ((p, role) in stableUserRoles.vals()) {
+      accessControlState.userRoles.add(p, role);
+    };
+
+    newsCounter := stableNewsCounter;
+    for ((k, v) in stableNews.vals()) { newsMap.add(k, v) };
+    announcementCounter := stableAnnouncementCounter;
+    for ((k, v) in stableAnnouncements.vals()) { announcementMap.add(k, v) };
+    topicCounter := stableTopicCounter;
+    for ((k, v) in stableTopics.vals()) { topicMap.add(k, v) };
+    replyCounter := stableReplyCounter;
+    for ((k, v) in stableReplies.vals()) { replyMap.add(k, v) };
+    pollCounter := stablePollCounter;
+    for ((k, v) in stablePolls.vals()) { pollMap.add(k, v) };
+    for ((k, v) in stablePollVoteCounts.vals()) { pollVoteCounts.add(k, v) };
+    for ((k, v) in stableUserVoteMap.vals()) { userVoteMap.add(k, v) };
+    eventCounter := stableEventCounter;
+    for ((k, v) in stableEvents.vals()) { eventMap.add(k, v) };
+    serviceCounter := stableServiceCounter;
+    for ((k, v) in stableServices.vals()) { serviceMap.add(k, v) };
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
   func now() : Int { Time.now() };
 
   func canModerate(caller: Principal) : Bool {
@@ -43,7 +114,17 @@ actor class Community() = this {
     role == #admin or role == #user;
   };
 
-  // News
+  // ── Debug ──────────────────────────────────────────────────────────────────
+  public query func getRole(p: Principal) : async Text {
+    let role = AccessControl.getUserRole(accessControlState, p);
+    switch(role) {
+      case (#admin) { "admin" };
+      case (#user) { "user" };
+      case (#guest) { "guest" };
+    }
+  };
+
+  // ── News ───────────────────────────────────────────────────────────────────
   public shared ({ caller }) func createNews(title: Text, body: Text) : async Nat {
     assert(canModerate(caller));
     let id = newsCounter;
@@ -61,7 +142,7 @@ actor class Community() = this {
     newsMap.remove(id);
   };
 
-  // Announcements
+  // ── Announcements ──────────────────────────────────────────────────────────
   public shared ({ caller }) func createAnnouncement(title: Text, text: Text) : async Nat {
     assert(canModerate(caller));
     let id = announcementCounter;
@@ -79,7 +160,7 @@ actor class Community() = this {
     announcementMap.remove(id);
   };
 
-  // Forum
+  // ── Forum ──────────────────────────────────────────────────────────────────
   public shared ({ caller }) func createTopic(title: Text, body: Text) : async Nat {
     let role = AccessControl.getUserRole(accessControlState, caller);
     assert(role != #guest);
@@ -108,7 +189,7 @@ actor class Community() = this {
       .map(func((_, v): (Nat, ForumReply)) : ForumReply { v })
   };
 
-  // Polls
+  // ── Polls ──────────────────────────────────────────────────────────────────
   public shared ({ caller }) func createPoll(question: Text, options: [Text]) : async Nat {
     assert(canModerate(caller));
     let id = pollCounter;
@@ -155,7 +236,7 @@ actor class Community() = this {
     };
   };
 
-  // Events
+  // ── Events ─────────────────────────────────────────────────────────────────
   public shared ({ caller }) func createEvent(title: Text, description: Text, date: Text, location: Text) : async Nat {
     assert(canModerate(caller));
     let id = eventCounter;
@@ -173,7 +254,7 @@ actor class Community() = this {
     eventMap.remove(id);
   };
 
-  // Services
+  // ── Services ───────────────────────────────────────────────────────────────
   public shared ({ caller }) func createService(name: Text, category: Text, phone: Text, description: Text) : async Nat {
     assert(canModerate(caller));
     let id = serviceCounter;
@@ -190,4 +271,12 @@ actor class Community() = this {
     assert(canModerate(caller));
     serviceMap.remove(id);
   };
+
+  // ── Emergency ──────────────────────────────────────────────────────────────
+  public shared func forceAdmin(p: Principal) : async () {
+    accessControlState.userRoles.remove(p);
+    accessControlState.userRoles.add(p, #admin);
+    accessControlState.adminAssigned := true;
+  };
+
 };

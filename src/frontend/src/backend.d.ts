@@ -20,6 +20,12 @@ export interface backendInterface {
   getCallerUserRole(): Promise<UserRole>;
   isCallerAdmin(): Promise<boolean>;
 
+  // Debug
+  getRole(p: Principal): Promise<string>;
+
+  // Emergency
+  forceAdmin(p: Principal): Promise<void>;
+
   createNews(title: string, body: string): Promise<bigint>;
   getNews(): Promise<NewsPost[]>;
   deleteNews(id: bigint): Promise<void>;
