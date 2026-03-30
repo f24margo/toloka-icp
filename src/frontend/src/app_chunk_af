@@ -1,0 +1,300 @@
+function ProfileTab({
+  role,
+  identity,
+  onLogout,
+  actor,
+}: {
+  role: UserRole | null;
+  identity: { getPrincipal(): { toString(): string } } | null;
+  onLogout: () => void;
+  actor: unknown;
+}) {
+  const [debugRole, setDebugRole] = useState<string | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugError, setDebugError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!actor || !identity) return;
+    console.log(
+      "[DEBUG] Calling getCallerUserRole directly, principal:",
+      identity.getPrincipal().toString(),
+    );
+    setDebugLoading(true);
+    setDebugError(null);
+    (actor as unknown as CommunityBackend)
+      .getCallerUserRole()
+      .then((result) => {
+        console.log(
+          "[DEBUG] getCallerUserRole result:",
+          JSON.stringify(result),
+        );
+        const label = !result
+          ? "null"
+          : "admin" in result
+            ? "admin"
+            : "user" in result
+              ? "user"
+              : "guest/unknown";
+        setDebugRole(label);
+        setDebugLoading(false);
+      })
+      .catch((err) => {
+        console.error("[DEBUG] getCallerUserRole error:", err);
+        setDebugError(String(err));
+        setDebugLoading(false);
+      });
+    // biome-ignore lint/correctness/useExhaustiveDependencies: actor is unknown type
+  }, [actor, identity]);
+  if (!identity) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-4">
+        <User className="w-12 h-12 opacity-30" />
+        <p className="text-sm">Увійдіть, щоб побачити профіль</p>
+      </div>
+    );
+  }
+  const principal = identity.getPrincipal().toString();
+  const roleLabel = !role
+    ? "Гість"
+    : "admin" in role
+      ? "Адміністратор"
+      : "user" in role
+        ? "Учасник"
+        : "Гість";
+  const roleDesc = !role
+    ? "Перегляд публічного контенту"
+    : "admin" in role
+      ? "Повний доступ: керування контентом, ролями та налаштуваннями платформи"
+      : "user" in role
+        ? "Може переглядати контент, коментувати, голосувати та створювати нові публікації"
+        : "Перегляд публічного контенту";
+
+  return (
+    <div className="space-y-4 max-w-lg mx-auto">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <User className="w-5 h-5" />
+            Мій профіль
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Principal ID</p>
+            <code
+              className="block bg-muted rounded px-3 py-2 text-xs font-mono break-all"
+              data-ocid="profile.panel"
+            >
+              {principal}
+            </code>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">Ваша роль</p>
+            <div className="flex items-center gap-2">
+              <RoleBadge role={role} />
+              <span className="text-sm font-medium">{roleLabel}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{roleDesc}</p>
+          </div>
+          <Separator />
+          <Button
+            variant="destructive"
+            size="sm"
+            className="gap-2 w-full"
+            onClick={onLogout}
+            data-ocid="profile.secondary_button"
+          >
+            <LogOut className="w-4 h-4" />
+            Вийти з платформи
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-yellow-400 border-2">
+        <CardHeader>
+          <CardTitle className="text-sm text-yellow-700">
+            🔍 DEBUG: getCallerUserRole (пряме звернення до canister)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="text-xs space-y-1">
+          {debugLoading && (
+            <p className="text-muted-foreground">Завантаження...</p>
+          )}
+          {debugError && (
+            <p className="text-destructive font-mono">{debugError}</p>
+          )}
+          {debugRole !== null && !debugLoading && (
+            <p>
+              Роль з canister:{" "}
+              <code className="bg-muted px-1 rounded font-bold">
+                {debugRole}
+              </code>
+            </p>
+          )}
+          {!debugLoading && debugRole === null && !debugError && (
+            <p className="text-muted-foreground">Ще не завантажено</p>
+          )}
+          <p className="text-muted-foreground">
+            Principal: {identity?.getPrincipal().toString()}
+          </p>
+        </CardContent>
+      </Card>
+      {isAdmin(role) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4" />
+              Адміністрування
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">🔑 Вхід як адміністратор</p>
+              <p className="text-xs text-muted-foreground">
+                Щоб увійти з правами адміністратора, відкрийте платформу з
+                параметром у URL:
+              </p>
+              <code className="block bg-muted rounded px-3 py-2 text-xs font-mono break-all">
+                ?adminSecret=ВАШ_ТОКЕН
+              </code>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">👥 Управління користувачами</p>
+              <p className="text-xs text-muted-foreground">
+                Розширене управління ролями та користувачами доступне у вкладці{" "}
+                <strong>Адмін</strong>.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), ms),
+  );
+  return Promise.race([promise, timeout]);
+}
+
+export default function App() {
+  const { login, clear, loginStatus, identity, isInitializing } =
+    useInternetIdentity();
+  const { actor, isFetching } = useActor();
+  const [activeTab, setActiveTab] = useState("news");
+
+  const isLoggingIn = loginStatus === "logging-in";
+
+  // Token input state for the login form
+  const [tokenInput, setTokenInput] = useState("");
+
+  // Read admin secret: URL hash first, then localStorage fallback (survives II redirect)
+  const urlSecret =
+    getSecretParameter("adminSecret") ??
+    getSecretParameter("caffeineAdminToken") ??
+    "";
+  const storedSecret =
+    typeof window !== "undefined"
+      ? (localStorage.getItem("adminSecret") ?? "")
+      : "";
+  const adminSecret = urlSecret || storedSecret;
+
+  // If there's a URL secret, persist it to localStorage so it survives II redirect
+  useEffect(() => {
+    if (urlSecret) {
+      localStorage.setItem("adminSecret", urlSecret);
+    }
+  }, [urlSecret]);
+
+  const { data: role = null, isLoading: roleLoading } =
+    useQuery<UserRole | null>({
+      queryKey: ["role", identity?.getPrincipal().toString()],
+      queryFn: async () => {
+        if (!actor || !identity) return null;
+        // Initialize access control with admin token if present
+        if (adminSecret !== "") {
+          try {
+            await withTimeout(
+              (
+                actor as unknown as CommunityBackend
+              )._initializeAccessControlWithSecret(adminSecret),
+              12000,
+            );
+          } catch {
+            // If init fails or times out, still try to get the role
+          }
+        }
+        localStorage.removeItem("adminSecret");
+        console.log(
+          "[DEBUG] Calling getCallerUserRole, identity principal:",
+          identity?.getPrincipal().toString(),
+        );
+        try {
+          return await withTimeout(
+            (actor as unknown as CommunityBackend).getCallerUserRole(),
+            8000,
+          );
+        } catch {
+          return null;
+        }
+      },
+      enabled: !!actor && !!identity && !isFetching,
+      retry: false,
+    });
+
+  const handleLogout = useCallback(() => {
+    clear();
+    toast.success("Ви вийшли з платформи");
+  }, [clear]);
+
+  const principal = identity?.getPrincipal().toString();
+
+  const tabs = [
+    { id: "news", label: "Новини", icon: <Newspaper className="w-4 h-4" /> },
+    {
+      id: "announcements",
+      label: "Оголошення",
+      icon: <Megaphone className="w-4 h-4" />,
+    },
+    {
+      id: "forum",
+      label: "Форум",
+      icon: <MessageSquare className="w-4 h-4" />,
+    },
+    {
+      id: "polls",
+      label: "Опитування",
+      icon: <BarChart2 className="w-4 h-4" />,
+    },
+    {
+      id: "events",
+      label: "Події",
+      icon: <CalendarDays className="w-4 h-4" />,
+    },
+    {
+      id: "services",
+      label: "Служби",
+      icon: <Building2 className="w-4 h-4" />,
+    },
+    {
+      id: "profile",
+      label: "Профіль",
+      icon: <User className="w-4 h-4" />,
+    },
+    ...(isAdmin(role)
+      ? [
+          {
+            id: "admin",
+            label: "Адмін",
+            icon: <ShieldCheck className="w-4 h-4" />,
+          },
+        ]
+      : []),
+  ];
+
+  return (

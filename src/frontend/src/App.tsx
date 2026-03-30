@@ -35,10 +35,40 @@ import {
   User,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
+import { useActor } from "./hooks/useActor";
+import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { type Lang, type TKey, getT } from "./i18n";
+import { getSecretParameter } from "./utils/urlParams";
 
-// Local type definitions matching backend.d.ts
+// ── Language Context ──────────────────────────────────────────────────────────
+
+interface LanguageContextValue {
+  lang: Lang;
+  setLang: (lang: Lang) => void;
+  t: (key: TKey) => string;
+}
+
+const LanguageContext = createContext<LanguageContextValue>({
+  lang: "uk",
+  setLang: () => {},
+  t: getT("uk"),
+});
+
+function useLanguage() {
+  return useContext(LanguageContext);
+}
+
+// ── Local type definitions matching backend.d.ts ──────────────────────────────
+
 type UserRole = { admin: null } | { user: null } | { guest: null };
 interface NewsPost {
   id: bigint;
@@ -133,23 +163,21 @@ interface CommunityBackend {
   getServices(): Promise<Service[]>;
   deleteService(id: bigint): Promise<void>;
 }
-import { useActor } from "./hooks/useActor";
-import { useInternetIdentity } from "./hooks/useInternetIdentity";
-import { getSecretParameter } from "./utils/urlParams";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatTimestamp(ts: bigint): string {
+function formatTimestamp(ts: bigint, lang: Lang): string {
+  const t = getT(lang);
   const ms = Number(ts / 1_000_000n);
   const diff = Date.now() - ms;
   const mins = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
-  if (mins < 1) return "щойно";
-  if (mins < 60) return `${mins} хв тому`;
-  if (hours < 24) return `${hours} год тому`;
-  if (days < 7) return `${days} дн тому`;
-  return new Date(ms).toLocaleDateString("uk-UA");
+  if (mins < 1) return t("just_now");
+  if (mins < 60) return t("min_ago").replace("{n}", String(mins));
+  if (hours < 24) return t("hours_ago").replace("{n}", String(hours));
+  if (days < 7) return t("days_ago").replace("{n}", String(days));
+  return new Date(ms).toLocaleDateString(lang === "uk" ? "uk-UA" : "en-US");
 }
 
 function truncatePrincipal(p: { toString(): string }): string {
@@ -170,22 +198,23 @@ function isGuest(role: UserRole | null): boolean {
 }
 
 function RoleBadge({ role }: { role: UserRole | null }) {
+  const { t } = useLanguage();
   if (!role) return null;
   if ("admin" in role)
     return (
       <Badge className="bg-primary text-primary-foreground text-xs">
-        Адмін
+        {t("role_admin")}
       </Badge>
     );
   if ("user" in role)
     return (
       <Badge variant="secondary" className="text-xs">
-        Модератор
+        {t("role_moderator")}
       </Badge>
     );
   return (
     <Badge variant="outline" className="text-xs">
-      Учасник
+      {t("role_member")}
     </Badge>
   );
 }
@@ -206,6 +235,7 @@ function EmptyState({
 
 function NewsTab({ role }: { role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t, lang } = useLanguage();
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -226,9 +256,9 @@ function NewsTab({ role }: { role: UserRole | null }) {
       setTitle("");
       setBody("");
       setShowForm(false);
-      toast.success("Новину опубліковано");
+      toast.success(t("news_published"));
     },
-    onError: () => toast.error("Помилка при створенні"),
+    onError: () => toast.error(t("create_error")),
   });
 
   const deleteMut = useMutation({
@@ -236,7 +266,7 @@ function NewsTab({ role }: { role: UserRole | null }) {
       (actor as unknown as CommunityBackend).deleteNews(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["news"] });
-      toast.success("Видалено");
+      toast.success(t("delete"));
     },
   });
 
@@ -252,24 +282,24 @@ function NewsTab({ role }: { role: UserRole | null }) {
               className="gap-2"
               data-ocid="news.open_modal_button"
             >
-              <Plus className="w-4 h-4" /> Додати новину
+              <Plus className="w-4 h-4" /> {t("news_add")}
             </Button>
           ) : (
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-base font-display">
-                  Нова новина
+                  {t("news_new")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input
-                  placeholder="Заголовок"
+                  placeholder={t("news_title_placeholder")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   data-ocid="news.input"
                 />
                 <Textarea
-                  placeholder="Текст новини..."
+                  placeholder={t("news_body_placeholder")}
                   rows={4}
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
@@ -284,14 +314,14 @@ function NewsTab({ role }: { role: UserRole | null }) {
                     {createMut.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Опублікувати
+                    {t("publish")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setShowForm(false)}
                     data-ocid="news.cancel_button"
                   >
-                    Скасувати
+                    {t("cancel")}
                   </Button>
                 </div>
               </CardContent>
@@ -309,10 +339,7 @@ function NewsTab({ role }: { role: UserRole | null }) {
       )}
       {!isLoading && sorted.length === 0 && (
         <div data-ocid="news.empty_state">
-          <EmptyState
-            message="Новин поки немає. Будьте першим!"
-            icon={<Newspaper />}
-          />
+          <EmptyState message={t("news_empty")} icon={<Newspaper />} />
         </div>
       )}
       <div className="space-y-4">
@@ -346,7 +373,8 @@ function NewsTab({ role }: { role: UserRole | null }) {
                 </div>
                 <CardDescription className="text-xs flex gap-2 items-center">
                   <User className="w-3 h-3" />
-                  {truncatePrincipal(n.author)} · {formatTimestamp(n.timestamp)}
+                  {truncatePrincipal(n.author)} ·{" "}
+                  {formatTimestamp(n.timestamp, lang)}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -366,6 +394,7 @@ function NewsTab({ role }: { role: UserRole | null }) {
 
 function AnnouncementsTab({ role }: { role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t, lang } = useLanguage();
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
@@ -386,9 +415,9 @@ function AnnouncementsTab({ role }: { role: UserRole | null }) {
       setTitle("");
       setText("");
       setShowForm(false);
-      toast.success("Оголошення опубліковано");
+      toast.success(t("ann_published"));
     },
-    onError: () => toast.error("Помилка"),
+    onError: () => toast.error(t("generic_error")),
   });
 
   const deleteMut = useMutation({
@@ -396,7 +425,7 @@ function AnnouncementsTab({ role }: { role: UserRole | null }) {
       (actor as unknown as CommunityBackend).deleteAnnouncement(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["announcements"] });
-      toast.success("Видалено");
+      toast.success(t("delete"));
     },
   });
 
@@ -414,24 +443,24 @@ function AnnouncementsTab({ role }: { role: UserRole | null }) {
               className="gap-2"
               data-ocid="announcements.open_modal_button"
             >
-              <Plus className="w-4 h-4" /> Додати оголошення
+              <Plus className="w-4 h-4" /> {t("ann_add")}
             </Button>
           ) : (
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-base font-display">
-                  Нове оголошення
+                  {t("ann_new")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input
-                  placeholder="Заголовок"
+                  placeholder={t("ann_title_placeholder")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   data-ocid="announcements.input"
                 />
                 <Textarea
-                  placeholder="Текст оголошення..."
+                  placeholder={t("ann_body_placeholder")}
                   rows={3}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
@@ -446,14 +475,14 @@ function AnnouncementsTab({ role }: { role: UserRole | null }) {
                     {createMut.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Опублікувати
+                    {t("publish")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setShowForm(false)}
                     data-ocid="announcements.cancel_button"
                   >
-                    Скасувати
+                    {t("cancel")}
                   </Button>
                 </div>
               </CardContent>
@@ -471,7 +500,7 @@ function AnnouncementsTab({ role }: { role: UserRole | null }) {
       )}
       {!isLoading && sorted.length === 0 && (
         <div data-ocid="announcements.empty_state">
-          <EmptyState message="Оголошень поки немає" icon={<Megaphone />} />
+          <EmptyState message={t("ann_empty")} icon={<Megaphone />} />
         </div>
       )}
       <div className="space-y-3">
@@ -504,7 +533,8 @@ function AnnouncementsTab({ role }: { role: UserRole | null }) {
                   )}
                 </div>
                 <CardDescription className="text-xs">
-                  {truncatePrincipal(a.author)} · {formatTimestamp(a.timestamp)}
+                  {truncatePrincipal(a.author)} ·{" "}
+                  {formatTimestamp(a.timestamp, lang)}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -527,6 +557,7 @@ function ForumReplies({
   role,
 }: { topicId: bigint; role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t, lang } = useLanguage();
   const qc = useQueryClient();
   const [replyBody, setReplyBody] = useState("");
 
@@ -543,9 +574,9 @@ function ForumReplies({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["replies", String(topicId)] });
       setReplyBody("");
-      toast.success("Відповідь додано");
+      toast.success(t("forum_reply_added"));
     },
-    onError: () => toast.error("Помилка"),
+    onError: () => toast.error(t("generic_error")),
   });
 
   const sorted = [...replies].sort((a, b) => Number(a.timestamp - b.timestamp));
@@ -554,11 +585,13 @@ function ForumReplies({
     <div className="space-y-3 mt-4">
       <Separator />
       <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-        Відповіді
+        {t("forum_replies_label")}
       </h3>
       {isLoading && <Loader2 className="animate-spin text-primary w-5 h-5" />}
       {!isLoading && sorted.length === 0 && (
-        <p className="text-sm text-muted-foreground">Відповідей ще немає</p>
+        <p className="text-sm text-muted-foreground">
+          {t("forum_replies_empty")}
+        </p>
       )}
       {sorted.map((r, i) => (
         <div
@@ -568,14 +601,14 @@ function ForumReplies({
         >
           <p className="text-sm whitespace-pre-wrap">{r.body}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            {truncatePrincipal(r.author)} · {formatTimestamp(r.timestamp)}
+            {truncatePrincipal(r.author)} · {formatTimestamp(r.timestamp, lang)}
           </p>
         </div>
       ))}
       {!isGuest(role) && (
         <div className="space-y-2 pt-2">
           <Textarea
-            placeholder="Написати відповідь..."
+            placeholder={t("forum_reply_placeholder")}
             rows={3}
             value={replyBody}
             onChange={(e) => setReplyBody(e.target.value)}
@@ -590,7 +623,7 @@ function ForumReplies({
             {createMut.isPending && (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             )}
-            Відповісти
+            {t("forum_reply")}
           </Button>
         </div>
       )}
@@ -600,6 +633,7 @@ function ForumReplies({
 
 function ForumTab({ role }: { role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t, lang } = useLanguage();
   const qc = useQueryClient();
   const [selectedTopic, setSelectedTopic] = useState<ForumTopic | null>(null);
   const [title, setTitle] = useState("");
@@ -621,9 +655,9 @@ function ForumTab({ role }: { role: UserRole | null }) {
       setTitle("");
       setBody("");
       setShowForm(false);
-      toast.success("Тему створено");
+      toast.success(t("forum_topic_created"));
     },
-    onError: () => toast.error("Помилка"),
+    onError: () => toast.error(t("generic_error")),
   });
 
   const sorted = [...topics].sort((a, b) => Number(b.timestamp - a.timestamp));
@@ -638,7 +672,7 @@ function ForumTab({ role }: { role: UserRole | null }) {
           className="gap-1"
           data-ocid="forum.secondary_button"
         >
-          <ArrowLeft className="w-4 h-4" /> Назад до тем
+          <ArrowLeft className="w-4 h-4" /> {t("forum_back")}
         </Button>
         <Card className="shadow-card">
           <CardHeader>
@@ -647,7 +681,7 @@ function ForumTab({ role }: { role: UserRole | null }) {
             </CardTitle>
             <CardDescription>
               {truncatePrincipal(selectedTopic.author)} ·{" "}
-              {formatTimestamp(selectedTopic.timestamp)}
+              {formatTimestamp(selectedTopic.timestamp, lang)}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -671,24 +705,24 @@ function ForumTab({ role }: { role: UserRole | null }) {
               className="gap-2"
               data-ocid="forum.open_modal_button"
             >
-              <Plus className="w-4 h-4" /> Нова тема
+              <Plus className="w-4 h-4" /> {t("forum_new_topic")}
             </Button>
           ) : (
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-base font-display">
-                  Нова тема
+                  {t("forum_new_topic")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input
-                  placeholder="Назва теми"
+                  placeholder={t("forum_topic_title")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   data-ocid="forum.input"
                 />
                 <Textarea
-                  placeholder="Опис теми..."
+                  placeholder={t("forum_topic_desc")}
                   rows={4}
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
@@ -702,14 +736,14 @@ function ForumTab({ role }: { role: UserRole | null }) {
                     {createMut.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Створити тему
+                    {t("forum_create")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setShowForm(false)}
                     data-ocid="forum.cancel_button"
                   >
-                    Скасувати
+                    {t("cancel")}
                   </Button>
                 </div>
               </CardContent>
@@ -727,39 +761,37 @@ function ForumTab({ role }: { role: UserRole | null }) {
       )}
       {!isLoading && sorted.length === 0 && (
         <div data-ocid="forum.empty_state">
-          <EmptyState
-            message="Форум порожній. Розпочніть першу тему!"
-            icon={<MessageSquare />}
-          />
+          <EmptyState message={t("forum_empty")} icon={<MessageSquare />} />
         </div>
       )}
       <div className="space-y-3">
-        {sorted.map((t, i) => (
+        {sorted.map((topic, i) => (
           <motion.div
-            key={String(t.id)}
+            key={String(topic.id)}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.04 }}
           >
             <Card
               className="shadow-card hover:shadow-md transition-shadow cursor-pointer"
-              onClick={() => setSelectedTopic(t)}
+              onClick={() => setSelectedTopic(topic)}
               data-ocid={`forum.item.${i + 1}`}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="font-display text-base hover:text-primary transition-colors">
-                    {t.title}
+                    {topic.title}
                   </CardTitle>
                   <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
                 </div>
                 <CardDescription className="text-xs">
-                  {truncatePrincipal(t.author)} · {formatTimestamp(t.timestamp)}
+                  {truncatePrincipal(topic.author)} ·{" "}
+                  {formatTimestamp(topic.timestamp, lang)}
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-0">
                 <p className="text-sm text-muted-foreground line-clamp-2">
-                  {t.body}
+                  {topic.body}
                 </p>
               </CardContent>
             </Card>
@@ -778,6 +810,7 @@ function PollCard({
   index,
 }: { poll: Poll; role: UserRole | null; index: number }) {
   const { actor, isFetching } = useActor();
+  const { t, lang } = useLanguage();
   const qc = useQueryClient();
 
   const { data: resultsArr, isLoading } = useQuery<[] | [PollResults]>({
@@ -805,9 +838,9 @@ function PollCard({
       (actor as unknown as CommunityBackend).vote(poll.id, BigInt(optIdx)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["poll-results", String(poll.id)] });
-      toast.success("Ваш голос зараховано!");
+      toast.success(t("poll_voted"));
     },
-    onError: () => toast.error("Помилка голосування"),
+    onError: () => toast.error(t("poll_vote_error")),
   });
 
   const canVote = !isGuest(role) && userVoted === null && !voteMut.isPending;
@@ -819,7 +852,8 @@ function PollCard({
           {poll.question}
         </CardTitle>
         <CardDescription className="text-xs">
-          {truncatePrincipal(poll.author)} · {formatTimestamp(poll.timestamp)}
+          {truncatePrincipal(poll.author)} ·{" "}
+          {formatTimestamp(poll.timestamp, lang)}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -862,12 +896,12 @@ function PollCard({
         })}
         {userVoted !== null && (
           <p className="text-xs text-muted-foreground pt-1">
-            ✓ Ви проголосували · {totalVotes} голосів
+            {t("poll_you_voted").replace("{n}", String(totalVotes))}
           </p>
         )}
         {isGuest(role) && (
           <p className="text-xs text-muted-foreground">
-            Увійдіть, щоб проголосувати
+            {t("poll_login_to_vote")}
           </p>
         )}
       </CardContent>
@@ -877,6 +911,7 @@ function PollCard({
 
 function PollsTab({ role }: { role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
@@ -900,9 +935,9 @@ function PollsTab({ role }: { role: UserRole | null }) {
       setQuestion("");
       setOptions(["", ""]);
       setShowForm(false);
-      toast.success("Опитування створено");
+      toast.success(t("poll_published"));
     },
-    onError: () => toast.error("Помилка"),
+    onError: () => toast.error(t("generic_error")),
   });
 
   const sorted = [...polls].sort((a, b) => Number(b.timestamp - a.timestamp));
@@ -917,18 +952,18 @@ function PollsTab({ role }: { role: UserRole | null }) {
               className="gap-2"
               data-ocid="polls.open_modal_button"
             >
-              <Plus className="w-4 h-4" /> Створити опитування
+              <Plus className="w-4 h-4" /> {t("poll_create")}
             </Button>
           ) : (
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-base font-display">
-                  Нове опитування
+                  {t("poll_new")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input
-                  placeholder="Питання"
+                  placeholder={t("poll_question")}
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   data-ocid="polls.input"
@@ -936,7 +971,7 @@ function PollsTab({ role }: { role: UserRole | null }) {
                 {options.map((opt, i) => (
                   <Input
                     key={String(i)}
-                    placeholder={`Варіант ${i + 1}`}
+                    placeholder={t("poll_option").replace("{n}", String(i + 1))}
                     value={opt}
                     onChange={(e) => {
                       const o = [...options];
@@ -950,7 +985,7 @@ function PollsTab({ role }: { role: UserRole | null }) {
                   size="sm"
                   onClick={() => setOptions([...options, ""])}
                 >
-                  + Варіант
+                  {t("poll_add_option")}
                 </Button>
                 <div className="flex gap-2 pt-1">
                   <Button
@@ -965,14 +1000,14 @@ function PollsTab({ role }: { role: UserRole | null }) {
                     {createMut.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Опублікувати
+                    {t("publish")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setShowForm(false)}
                     data-ocid="polls.cancel_button"
                   >
-                    Скасувати
+                    {t("cancel")}
                   </Button>
                 </div>
               </CardContent>
@@ -990,7 +1025,7 @@ function PollsTab({ role }: { role: UserRole | null }) {
       )}
       {!isLoading && sorted.length === 0 && (
         <div data-ocid="polls.empty_state">
-          <EmptyState message="Опитувань поки немає" icon={<BarChart2 />} />
+          <EmptyState message={t("poll_empty")} icon={<BarChart2 />} />
         </div>
       )}
       <div className="space-y-4">
@@ -1006,6 +1041,7 @@ function PollsTab({ role }: { role: UserRole | null }) {
 
 function EventsTab({ role }: { role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1035,9 +1071,9 @@ function EventsTab({ role }: { role: UserRole | null }) {
       setDate("");
       setLocation("");
       setShowForm(false);
-      toast.success("Подію додано");
+      toast.success(t("events_added"));
     },
-    onError: () => toast.error("Помилка"),
+    onError: () => toast.error(t("generic_error")),
   });
 
   const deleteMut = useMutation({
@@ -1045,7 +1081,7 @@ function EventsTab({ role }: { role: UserRole | null }) {
       (actor as unknown as CommunityBackend).deleteEvent(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["events"] });
-      toast.success("Видалено");
+      toast.success(t("delete"));
     },
   });
 
@@ -1063,24 +1099,24 @@ function EventsTab({ role }: { role: UserRole | null }) {
               className="gap-2"
               data-ocid="events.open_modal_button"
             >
-              <Plus className="w-4 h-4" /> Додати подію
+              <Plus className="w-4 h-4" /> {t("events_add")}
             </Button>
           ) : (
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-base font-display">
-                  Нова подія
+                  {t("events_new")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <Input
-                  placeholder="Назва події"
+                  placeholder={t("events_title_placeholder")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   data-ocid="events.input"
                 />
                 <Textarea
-                  placeholder="Опис"
+                  placeholder={t("events_desc_placeholder")}
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
@@ -1092,7 +1128,7 @@ function EventsTab({ role }: { role: UserRole | null }) {
                       htmlFor="event-date"
                       className="text-xs text-muted-foreground mb-1 block"
                     >
-                      Дата
+                      {t("events_date")}
                     </label>
                     <Input
                       id="event-date"
@@ -1106,11 +1142,11 @@ function EventsTab({ role }: { role: UserRole | null }) {
                       htmlFor="event-location"
                       className="text-xs text-muted-foreground mb-1 block"
                     >
-                      Місце
+                      {t("events_location")}
                     </label>
                     <Input
                       id="event-location"
-                      placeholder="Місце проведення"
+                      placeholder={t("events_location_placeholder")}
                       value={location}
                       onChange={(e) => setLocation(e.target.value)}
                     />
@@ -1125,14 +1161,14 @@ function EventsTab({ role }: { role: UserRole | null }) {
                     {createMut.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Додати
+                    {t("add")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setShowForm(false)}
                     data-ocid="events.cancel_button"
                   >
-                    Скасувати
+                    {t("cancel")}
                   </Button>
                 </div>
               </CardContent>
@@ -1150,7 +1186,7 @@ function EventsTab({ role }: { role: UserRole | null }) {
       )}
       {!isLoading && sorted.length === 0 && (
         <div data-ocid="events.empty_state">
-          <EmptyState message="Подій не заплановано" icon={<CalendarDays />} />
+          <EmptyState message={t("events_empty")} icon={<CalendarDays />} />
         </div>
       )}
       <div className="space-y-3">
@@ -1211,6 +1247,7 @@ function EventsTab({ role }: { role: UserRole | null }) {
 
 function ServicesTab({ role }: { role: UserRole | null }) {
   const { actor, isFetching } = useActor();
+  const { t } = useLanguage();
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -1241,9 +1278,9 @@ function ServicesTab({ role }: { role: UserRole | null }) {
       setPhone("");
       setDesc("");
       setShowForm(false);
-      toast.success("Службу додано");
+      toast.success(t("services_added"));
     },
-    onError: () => toast.error("Помилка"),
+    onError: () => toast.error(t("generic_error")),
   });
 
   const deleteMut = useMutation({
@@ -1251,7 +1288,7 @@ function ServicesTab({ role }: { role: UserRole | null }) {
       (actor as unknown as CommunityBackend).deleteService(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["services"] });
-      toast.success("Видалено");
+      toast.success(t("delete"));
     },
   });
 
@@ -1272,36 +1309,36 @@ function ServicesTab({ role }: { role: UserRole | null }) {
               className="gap-2"
               data-ocid="services.open_modal_button"
             >
-              <Plus className="w-4 h-4" /> Додати службу
+              <Plus className="w-4 h-4" /> {t("services_add")}
             </Button>
           ) : (
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle className="text-base font-display">
-                  Нова служба
+                  {t("services_new")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <Input
-                    placeholder="Назва"
+                    placeholder={t("services_name")}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     data-ocid="services.input"
                   />
                   <Input
-                    placeholder="Категорія (напр. Медицина)"
+                    placeholder={t("services_category")}
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                   />
                 </div>
                 <Input
-                  placeholder="Телефон"
+                  placeholder={t("services_phone")}
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                 />
                 <Textarea
-                  placeholder="Опис"
+                  placeholder={t("services_desc_placeholder")}
                   rows={2}
                   value={desc}
                   onChange={(e) => setDesc(e.target.value)}
@@ -1316,14 +1353,14 @@ function ServicesTab({ role }: { role: UserRole | null }) {
                     {createMut.isPending && (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     )}
-                    Додати
+                    {t("add")}
                   </Button>
                   <Button
                     variant="ghost"
                     onClick={() => setShowForm(false)}
                     data-ocid="services.cancel_button"
                   >
-                    Скасувати
+                    {t("cancel")}
                   </Button>
                 </div>
               </CardContent>
@@ -1340,7 +1377,7 @@ function ServicesTab({ role }: { role: UserRole | null }) {
             onClick={() => setFilterCat("")}
             data-ocid="services.tab"
           >
-            Усі
+            {t("all")}
           </Button>
           {categories.map((c) => (
             <Button
@@ -1365,7 +1402,7 @@ function ServicesTab({ role }: { role: UserRole | null }) {
       )}
       {!isLoading && filtered.length === 0 && (
         <div data-ocid="services.empty_state">
-          <EmptyState message="Служб поки немає" icon={<Building2 />} />
+          <EmptyState message={t("services_empty")} icon={<Building2 />} />
         </div>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1432,62 +1469,60 @@ function ServicesTab({ role }: { role: UserRole | null }) {
 // ── Admin Tab ─────────────────────────────────────────────────────────────────
 
 function AdminTab() {
+  const { t } = useLanguage();
   return (
     <div className="space-y-4" data-ocid="admin.panel">
       <Card className="shadow-card border-primary/20">
         <CardHeader>
           <CardTitle className="font-display flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-primary" /> Панель
-            адміністратора
+            <ShieldCheck className="w-5 h-5 text-primary" /> {t("admin_title")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div className="bg-accent/20 rounded-lg p-4 space-y-2">
-            <p className="font-semibold">🔑 Токен адміністратора</p>
+            <p className="font-semibold">🔑 {t("admin_token_section")}</p>
             <p className="text-muted-foreground leading-relaxed">
-              Перший користувач, який увійде з правильним секретним токеном
-              адміністратора, автоматично отримує роль <strong>Адмін</strong>.
-              Токен задається при розгортанні платформи.
+              {t("admin_token_info")}
             </p>
             <p className="text-muted-foreground leading-relaxed">
-              Щоб увійти як адмін, відкрийте сторінку з параметром:
+              {t("admin_token_how")}
             </p>
             <code className="block bg-muted rounded px-3 py-2 text-xs font-mono break-all">
-              ?adminSecret=ВАШ_ТОКЕН
+              ?adminSecret=YOUR_TOKEN
             </code>
           </div>
           <Separator />
           <div className="space-y-2">
-            <p className="font-semibold">👥 Ролі користувачів</p>
+            <p className="font-semibold">👥 {t("admin_roles_section")}</p>
             <div className="space-y-1 text-muted-foreground">
               <p>
                 <Badge className="bg-primary text-primary-foreground text-xs mr-2">
-                  Адмін
+                  {t("role_admin")}
                 </Badge>{" "}
-                Повний доступ: керування контентом та ролями
+                {t("role_admin_desc")}
               </p>
               <p>
                 <Badge variant="secondary" className="text-xs mr-2">
-                  Модератор
+                  {t("role_moderator")}
                 </Badge>{" "}
-                Може створювати та видаляти контент
+                {t("role_moderator_desc")}
               </p>
               <p>
                 <Badge variant="outline" className="text-xs mr-2">
-                  Учасник
+                  {t("role_member")}
                 </Badge>{" "}
-                Може переглядати, коментувати та голосувати
+                {t("role_member_desc")}
               </p>
             </div>
           </div>
           <Separator />
           <div className="space-y-2">
-            <p className="font-semibold">📋 Поради для початку</p>
+            <p className="font-semibold">📋 {t("admin_tips_section")}</p>
             <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
-              <li>Увійдіть з токеном адміністратора для отримання прав</li>
-              <li>Додайте кілька новин та оголошень</li>
-              <li>Створіть перші події та служби громади</li>
-              <li>Поділіться посиланням з учасниками</li>
+              <li>{t("admin_tip_1")}</li>
+              <li>{t("admin_tip_2")}</li>
+              <li>{t("admin_tip_3")}</li>
+              <li>{t("admin_tip_4")}</li>
             </ol>
           </div>
         </CardContent>
@@ -1509,6 +1544,7 @@ function ProfileTab({
   onLogout: () => void;
   actor: unknown;
 }) {
+  const { t } = useLanguage();
   const [debugRole, setDebugRole] = useState<string | null>(null);
   const [debugLoading, setDebugLoading] = useState(false);
   const [debugError, setDebugError] = useState<string | null>(null);
@@ -1543,31 +1579,32 @@ function ProfileTab({
         setDebugError(String(err));
         setDebugLoading(false);
       });
-    // biome-ignore lint/correctness/useExhaustiveDependencies: actor is unknown type
   }, [actor, identity]);
+
   if (!identity) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-4">
         <User className="w-12 h-12 opacity-30" />
-        <p className="text-sm">Увійдіть, щоб побачити профіль</p>
+        <p className="text-sm">{t("profile_not_logged_in")}</p>
       </div>
     );
   }
+
   const principal = identity.getPrincipal().toString();
   const roleLabel = !role
-    ? "Гість"
+    ? t("role_guest_label")
     : "admin" in role
-      ? "Адміністратор"
+      ? t("role_admin_full")
       : "user" in role
-        ? "Учасник"
-        : "Гість";
+        ? t("role_member")
+        : t("role_guest_label");
   const roleDesc = !role
-    ? "Перегляд публічного контенту"
+    ? t("role_guest_desc")
     : "admin" in role
-      ? "Повний доступ: керування контентом, ролями та налаштуваннями платформи"
+      ? t("role_admin_full_desc")
       : "user" in role
-        ? "Може переглядати контент, коментувати, голосувати та створювати нові публікації"
-        : "Перегляд публічного контенту";
+        ? t("role_user_desc")
+        : t("role_guest_desc");
 
   return (
     <div className="space-y-4 max-w-lg mx-auto">
@@ -1575,12 +1612,14 @@ function ProfileTab({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <User className="w-5 h-5" />
-            Мій профіль
+            {t("profile_title")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Principal ID</p>
+            <p className="text-xs text-muted-foreground">
+              {t("profile_principal")}
+            </p>
             <code
               className="block bg-muted rounded px-3 py-2 text-xs font-mono break-all"
               data-ocid="profile.panel"
@@ -1589,7 +1628,7 @@ function ProfileTab({
             </code>
           </div>
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Ваша роль</p>
+            <p className="text-xs text-muted-foreground">{t("profile_role")}</p>
             <div className="flex items-center gap-2">
               <RoleBadge role={role} />
               <span className="text-sm font-medium">{roleLabel}</span>
@@ -1605,7 +1644,7 @@ function ProfileTab({
             data-ocid="profile.secondary_button"
           >
             <LogOut className="w-4 h-4" />
-            Вийти з платформи
+            {t("profile_logout")}
           </Button>
         </CardContent>
       </Card>
@@ -1613,57 +1652,60 @@ function ProfileTab({
       <Card className="border-yellow-400 border-2">
         <CardHeader>
           <CardTitle className="text-sm text-yellow-700">
-            🔍 DEBUG: getCallerUserRole (пряме звернення до canister)
+            🔍 {t("debug_title")}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-xs space-y-1">
           {debugLoading && (
-            <p className="text-muted-foreground">Завантаження...</p>
+            <p className="text-muted-foreground">{t("loading")}</p>
           )}
           {debugError && (
             <p className="text-destructive font-mono">{debugError}</p>
           )}
           {debugRole !== null && !debugLoading && (
             <p>
-              Роль з canister:{" "}
+              {t("debug_role_from_canister")}{" "}
               <code className="bg-muted px-1 rounded font-bold">
                 {debugRole}
               </code>
             </p>
           )}
           {!debugLoading && debugRole === null && !debugError && (
-            <p className="text-muted-foreground">Ще не завантажено</p>
+            <p className="text-muted-foreground">{t("debug_not_loaded")}</p>
           )}
           <p className="text-muted-foreground">
-            Principal: {identity?.getPrincipal().toString()}
+            {t("debug_principal")} {identity?.getPrincipal().toString()}
           </p>
         </CardContent>
       </Card>
+
       {isAdmin(role) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
               <ShieldCheck className="w-4 h-4" />
-              Адміністрування
+              {t("profile_admin_section")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="space-y-2">
-              <p className="text-sm font-medium">🔑 Вхід як адміністратор</p>
+              <p className="text-sm font-medium">
+                🔑 {t("profile_admin_login_title")}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Щоб увійти з правами адміністратора, відкрийте платформу з
-                параметром у URL:
+                {t("profile_admin_login_desc")}
               </p>
               <code className="block bg-muted rounded px-3 py-2 text-xs font-mono break-all">
-                ?adminSecret=ВАШ_ТОКЕН
+                ?adminSecret=YOUR_TOKEN
               </code>
             </div>
             <Separator />
             <div className="space-y-2">
-              <p className="text-sm font-medium">👥 Управління користувачами</p>
+              <p className="text-sm font-medium">
+                👥 {t("profile_users_title")}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Розширене управління ролями та користувачами доступне у вкладці{" "}
-                <strong>Адмін</strong>.
+                {t("profile_users_desc")}
               </p>
             </div>
           </CardContent>
@@ -1682,10 +1724,11 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([promise, timeout]);
 }
 
-export default function App() {
+function AppInner() {
   const { login, clear, loginStatus, identity, isInitializing } =
     useInternetIdentity();
   const { actor, isFetching } = useActor();
+  const { lang, setLang, t } = useLanguage();
   const [activeTab, setActiveTab] = useState("news");
 
   const isLoggingIn = loginStatus === "logging-in";
@@ -1749,48 +1792,52 @@ export default function App() {
 
   const handleLogout = useCallback(() => {
     clear();
-    toast.success("Ви вийшли з платформи");
-  }, [clear]);
+    toast.success(t("logged_out"));
+  }, [clear, t]);
 
   const principal = identity?.getPrincipal().toString();
 
   const tabs = [
-    { id: "news", label: "Новини", icon: <Newspaper className="w-4 h-4" /> },
+    {
+      id: "news",
+      label: t("tab_news"),
+      icon: <Newspaper className="w-4 h-4" />,
+    },
     {
       id: "announcements",
-      label: "Оголошення",
+      label: t("tab_announcements"),
       icon: <Megaphone className="w-4 h-4" />,
     },
     {
       id: "forum",
-      label: "Форум",
+      label: t("tab_forum"),
       icon: <MessageSquare className="w-4 h-4" />,
     },
     {
       id: "polls",
-      label: "Опитування",
+      label: t("tab_polls"),
       icon: <BarChart2 className="w-4 h-4" />,
     },
     {
       id: "events",
-      label: "Події",
+      label: t("tab_events"),
       icon: <CalendarDays className="w-4 h-4" />,
     },
     {
       id: "services",
-      label: "Служби",
+      label: t("tab_services"),
       icon: <Building2 className="w-4 h-4" />,
     },
     {
       id: "profile",
-      label: "Профіль",
+      label: t("tab_profile"),
       icon: <User className="w-4 h-4" />,
     },
     ...(isAdmin(role)
       ? [
           {
             id: "admin",
-            label: "Адмін",
+            label: t("tab_admin"),
             icon: <ShieldCheck className="w-4 h-4" />,
           },
         ]
@@ -1811,7 +1858,7 @@ export default function App() {
               </span>
             </div>
             <h1 className="font-display text-lg font-semibold text-foreground leading-none">
-              Платформа Громади
+              {t("app_title")}
             </h1>
           </div>
 
@@ -1819,6 +1866,16 @@ export default function App() {
             {(isFetching || isInitializing || roleLoading) && (
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
             )}
+            {/* Language toggle */}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setLang(lang === "uk" ? "en" : "uk")}
+              className="text-xs font-semibold px-2"
+              data-ocid="lang.toggle"
+            >
+              {lang === "uk" ? "EN" : "УКР"}
+            </Button>
             {identity ? (
               <div className="flex items-center gap-2">
                 <RoleBadge role={role} />
@@ -1835,7 +1892,7 @@ export default function App() {
                   data-ocid="auth.secondary_button"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline">Вийти</span>
+                  <span className="hidden sm:inline">{t("logout")}</span>
                 </Button>
               </div>
             ) : (
@@ -1851,7 +1908,7 @@ export default function App() {
                 ) : (
                   <LogIn className="w-4 h-4" />
                 )}
-                Увійти
+                {t("login")}
               </Button>
             )}
           </div>
@@ -1869,10 +1926,7 @@ export default function App() {
           >
             <div className="max-w-4xl mx-auto px-4 py-2 text-sm text-accent-foreground flex items-center gap-2">
               <span>👋</span>
-              <span>
-                Ласкаво просимо! Ви зареєстровані як учасник громади. Ви можете
-                переглядати контент, коментувати та голосувати.
-              </span>
+              <span>{t("welcome_banner")}</span>
             </div>
           </motion.div>
         )}
@@ -1888,10 +1942,8 @@ export default function App() {
                   <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-3">
                     <span className="text-3xl">🌿</span>
                   </div>
-                  <CardTitle className="text-xl">Платформа Громади</CardTitle>
-                  <CardDescription>
-                    Увійдіть через Internet Identity, щоб продовжити
-                  </CardDescription>
+                  <CardTitle className="text-xl">{t("app_title")}</CardTitle>
+                  <CardDescription>{t("login_subtitle")}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-4 pt-2">
                   <div className="flex flex-col gap-1.5">
@@ -1900,20 +1952,20 @@ export default function App() {
                       className="text-sm font-medium text-foreground flex items-center gap-1.5"
                     >
                       <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-                      Токен адміністратора
+                      {t("admin_token_label")}
                       <span className="text-muted-foreground font-normal">
-                        (необов&apos;язково)
+                        {t("admin_token_optional")}
                       </span>
                     </label>
                     <Input
                       id="admin-token-input"
                       type="password"
-                      placeholder="Введіть токен, щоб отримати права адміна"
+                      placeholder={t("admin_token_placeholder")}
                       value={tokenInput}
                       onChange={(e) => setTokenInput(e.target.value)}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Залиште порожнім для звичайного входу
+                      {t("admin_token_hint")}
                     </p>
                   </div>
                   <Button
@@ -1931,7 +1983,7 @@ export default function App() {
                     ) : (
                       <LogIn className="w-4 h-4" />
                     )}
-                    Увійти через Internet Identity
+                    {t("login_ii")}
                   </Button>
                 </CardContent>
               </Card>
@@ -1943,7 +1995,7 @@ export default function App() {
             data-ocid="app.loading_state"
           >
             <Loader2 className="w-8 h-8 animate-spin" />
-            <p className="text-sm">Завантаження профілю...</p>
+            <p className="text-sm">{t("loading_profile")}</p>
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -1953,15 +2005,15 @@ export default function App() {
                 className="flex w-max gap-1 bg-muted/50 p-1 rounded-lg h-auto"
                 data-ocid="nav.tab"
               >
-                {tabs.map((t) => (
+                {tabs.map((tab) => (
                   <TabsTrigger
-                    key={t.id}
-                    value={t.id}
+                    key={tab.id}
+                    value={tab.id}
                     className="flex items-center gap-1.5 px-3 py-2 text-sm whitespace-nowrap data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-xs"
-                    data-ocid={`nav.${t.id}.tab`}
+                    data-ocid={`nav.${tab.id}.tab`}
                   >
-                    {t.icon}
-                    {t.label}
+                    {tab.icon}
+                    {tab.label}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -2005,8 +2057,8 @@ export default function App() {
       {/* Footer */}
       <footer className="border-t border-border py-4 mt-8">
         <div className="max-w-4xl mx-auto px-4 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Платформа Громади. Зроблено з{" "}
-          <span className="text-destructive">♥</span> за допомогою{" "}
+          © {new Date().getFullYear()} {t("footer")}{" "}
+          <span className="text-destructive">♥</span> {t("footer_using")}{" "}
           <a
             href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
             target="_blank"
@@ -2018,5 +2070,26 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  const stored =
+    typeof window !== "undefined"
+      ? (localStorage.getItem("lang") as Lang | null)
+      : null;
+  const [lang, setLangState] = useState<Lang>(stored === "en" ? "en" : "uk");
+
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    localStorage.setItem("lang", l);
+  }, []);
+
+  const t = useMemo(() => getT(lang), [lang]);
+
+  return (
+    <LanguageContext.Provider value={{ lang, setLang, t }}>
+      <AppInner />
+    </LanguageContext.Provider>
   );
 }

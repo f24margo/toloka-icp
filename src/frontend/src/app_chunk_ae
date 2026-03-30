@@ -1,0 +1,300 @@
+              )}
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Services Tab ──────────────────────────────────────────────────────────────
+
+function ServicesTab({ role }: { role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [phone, setPhone] = useState("");
+  const [desc, setDesc] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [filterCat, setFilterCat] = useState("");
+
+  const { data: services = [], isLoading } = useQuery<Service[]>({
+    queryKey: ["services"],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getServices() : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createService(
+        name,
+        category,
+        phone,
+        desc,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services"] });
+      setName("");
+      setCategory("");
+      setPhone("");
+      setDesc("");
+      setShowForm(false);
+      toast.success("Службу додано");
+    },
+    onError: () => toast.error("Помилка"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: bigint) =>
+      (actor as unknown as CommunityBackend).deleteService(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["services"] });
+      toast.success("Видалено");
+    },
+  });
+
+  const categories = Array.from(
+    new Set(services.map((s) => s.category).filter(Boolean)),
+  );
+  const filtered = filterCat
+    ? services.filter((s) => s.category === filterCat)
+    : services;
+
+  return (
+    <div className="space-y-4">
+      {isUser(role) && (
+        <div>
+          {!showForm ? (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="gap-2"
+              data-ocid="services.open_modal_button"
+            >
+              <Plus className="w-4 h-4" /> Додати службу
+            </Button>
+          ) : (
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-base font-display">
+                  Нова служба
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    placeholder="Назва"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    data-ocid="services.input"
+                  />
+                  <Input
+                    placeholder="Категорія (напр. Медицина)"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                  />
+                </div>
+                <Input
+                  placeholder="Телефон"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+                <Textarea
+                  placeholder="Опис"
+                  rows={2}
+                  value={desc}
+                  onChange={(e) => setDesc(e.target.value)}
+                  data-ocid="services.textarea"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => createMut.mutate()}
+                    disabled={!name || createMut.isPending}
+                    data-ocid="services.submit_button"
+                  >
+                    {createMut.isPending && (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Додати
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowForm(false)}
+                    data-ocid="services.cancel_button"
+                  >
+                    Скасувати
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {categories.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={filterCat === "" ? "default" : "outline"}
+            onClick={() => setFilterCat("")}
+            data-ocid="services.tab"
+          >
+            Усі
+          </Button>
+          {categories.map((c) => (
+            <Button
+              key={c}
+              size="sm"
+              variant={filterCat === c ? "default" : "outline"}
+              onClick={() => setFilterCat(c)}
+            >
+              {c}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {isLoading && (
+        <div
+          className="flex justify-center py-8"
+          data-ocid="services.loading_state"
+        >
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && filtered.length === 0 && (
+        <div data-ocid="services.empty_state">
+          <EmptyState message="Служб поки немає" icon={<Building2 />} />
+        </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        {filtered.map((s, i) => (
+          <motion.div
+            key={String(s.id)}
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: i * 0.04 }}
+          >
+            <Card
+              className="shadow-card h-full"
+              data-ocid={`services.item.${i + 1}`}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <CardTitle className="font-display text-base">
+                      {s.name}
+                    </CardTitle>
+                    {s.category && (
+                      <Badge variant="outline" className="text-xs mt-1">
+                        {s.category}
+                      </Badge>
+                    )}
+                  </div>
+                  {isUser(role) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive shrink-0 h-8 w-8"
+                      onClick={() => deleteMut.mutate(s.id)}
+                      data-ocid={`services.delete_button.${i + 1}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 space-y-1">
+                {s.phone && (
+                  <a
+                    href={`tel:${s.phone}`}
+                    className="text-sm flex items-center gap-1 text-primary hover:underline"
+                  >
+                    <Phone className="w-3 h-3" />
+                    {s.phone}
+                  </a>
+                )}
+                {s.description && (
+                  <p className="text-sm text-muted-foreground">
+                    {s.description}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Admin Tab ─────────────────────────────────────────────────────────────────
+
+function AdminTab() {
+  return (
+    <div className="space-y-4" data-ocid="admin.panel">
+      <Card className="shadow-card border-primary/20">
+        <CardHeader>
+          <CardTitle className="font-display flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-primary" /> Панель
+            адміністратора
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="bg-accent/20 rounded-lg p-4 space-y-2">
+            <p className="font-semibold">🔑 Токен адміністратора</p>
+            <p className="text-muted-foreground leading-relaxed">
+              Перший користувач, який увійде з правильним секретним токеном
+              адміністратора, автоматично отримує роль <strong>Адмін</strong>.
+              Токен задається при розгортанні платформи.
+            </p>
+            <p className="text-muted-foreground leading-relaxed">
+              Щоб увійти як адмін, відкрийте сторінку з параметром:
+            </p>
+            <code className="block bg-muted rounded px-3 py-2 text-xs font-mono break-all">
+              ?adminSecret=ВАШ_ТОКЕН
+            </code>
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <p className="font-semibold">👥 Ролі користувачів</p>
+            <div className="space-y-1 text-muted-foreground">
+              <p>
+                <Badge className="bg-primary text-primary-foreground text-xs mr-2">
+                  Адмін
+                </Badge>{" "}
+                Повний доступ: керування контентом та ролями
+              </p>
+              <p>
+                <Badge variant="secondary" className="text-xs mr-2">
+                  Модератор
+                </Badge>{" "}
+                Може створювати та видаляти контент
+              </p>
+              <p>
+                <Badge variant="outline" className="text-xs mr-2">
+                  Учасник
+                </Badge>{" "}
+                Може переглядати, коментувати та голосувати
+              </p>
+            </div>
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <p className="font-semibold">📋 Поради для початку</p>
+            <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+              <li>Увійдіть з токеном адміністратора для отримання прав</li>
+              <li>Додайте кілька новин та оголошень</li>
+              <li>Створіть перші події та служби громади</li>
+              <li>Поділіться посиланням з учасниками</li>
+            </ol>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ── Profile Tab ──────────────────────────────────────────────────────────────
+

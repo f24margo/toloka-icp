@@ -1,0 +1,300 @@
+      setOptions(["", ""]);
+      setShowForm(false);
+      toast.success("Опитування створено");
+    },
+    onError: () => toast.error("Помилка"),
+  });
+
+  const sorted = [...polls].sort((a, b) => Number(b.timestamp - a.timestamp));
+
+  return (
+    <div className="space-y-4">
+      {isUser(role) && (
+        <div>
+          {!showForm ? (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="gap-2"
+              data-ocid="polls.open_modal_button"
+            >
+              <Plus className="w-4 h-4" /> Створити опитування
+            </Button>
+          ) : (
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-base font-display">
+                  Нове опитування
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Питання"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  data-ocid="polls.input"
+                />
+                {options.map((opt, i) => (
+                  <Input
+                    key={String(i)}
+                    placeholder={`Варіант ${i + 1}`}
+                    value={opt}
+                    onChange={(e) => {
+                      const o = [...options];
+                      o[i] = e.target.value;
+                      setOptions(o);
+                    }}
+                  />
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOptions([...options, ""])}
+                >
+                  + Варіант
+                </Button>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    onClick={() => createMut.mutate()}
+                    disabled={
+                      !question ||
+                      options.filter(Boolean).length < 2 ||
+                      createMut.isPending
+                    }
+                    data-ocid="polls.submit_button"
+                  >
+                    {createMut.isPending && (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Опублікувати
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowForm(false)}
+                    data-ocid="polls.cancel_button"
+                  >
+                    Скасувати
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+      {isLoading && (
+        <div
+          className="flex justify-center py-8"
+          data-ocid="polls.loading_state"
+        >
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && sorted.length === 0 && (
+        <div data-ocid="polls.empty_state">
+          <EmptyState message="Опитувань поки немає" icon={<BarChart2 />} />
+        </div>
+      )}
+      <div className="space-y-4">
+        {sorted.map((p, i) => (
+          <PollCard key={String(p.id)} poll={p} role={role} index={i} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Events Tab ────────────────────────────────────────────────────────────────
+
+function EventsTab({ role }: { role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [date, setDate] = useState("");
+  const [location, setLocation] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const { data: events = [], isLoading } = useQuery<Event[]>({
+    queryKey: ["events"],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getEvents() : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createEvent(
+        title,
+        description,
+        date,
+        location,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["events"] });
+      setTitle("");
+      setDescription("");
+      setDate("");
+      setLocation("");
+      setShowForm(false);
+      toast.success("Подію додано");
+    },
+    onError: () => toast.error("Помилка"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: bigint) =>
+      (actor as unknown as CommunityBackend).deleteEvent(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["events"] });
+      toast.success("Видалено");
+    },
+  });
+
+  const sorted = [...events].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+  );
+
+  return (
+    <div className="space-y-4">
+      {isUser(role) && (
+        <div>
+          {!showForm ? (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="gap-2"
+              data-ocid="events.open_modal_button"
+            >
+              <Plus className="w-4 h-4" /> Додати подію
+            </Button>
+          ) : (
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-base font-display">
+                  Нова подія
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Назва події"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  data-ocid="events.input"
+                />
+                <Textarea
+                  placeholder="Опис"
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  data-ocid="events.textarea"
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="event-date"
+                      className="text-xs text-muted-foreground mb-1 block"
+                    >
+                      Дата
+                    </label>
+                    <Input
+                      id="event-date"
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="event-location"
+                      className="text-xs text-muted-foreground mb-1 block"
+                    >
+                      Місце
+                    </label>
+                    <Input
+                      id="event-location"
+                      placeholder="Місце проведення"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => createMut.mutate()}
+                    disabled={!title || !date || createMut.isPending}
+                    data-ocid="events.submit_button"
+                  >
+                    {createMut.isPending && (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Додати
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowForm(false)}
+                    data-ocid="events.cancel_button"
+                  >
+                    Скасувати
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+      {isLoading && (
+        <div
+          className="flex justify-center py-8"
+          data-ocid="events.loading_state"
+        >
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && sorted.length === 0 && (
+        <div data-ocid="events.empty_state">
+          <EmptyState message="Подій не заплановано" icon={<CalendarDays />} />
+        </div>
+      )}
+      <div className="space-y-3">
+        {sorted.map((e, i) => (
+          <motion.div
+            key={String(e.id)}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04 }}
+          >
+            <Card className="shadow-card" data-ocid={`events.item.${i + 1}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <CardTitle className="font-display text-base">
+                      {e.title}
+                    </CardTitle>
+                    <div className="flex flex-wrap gap-3 mt-1">
+                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {e.date}
+                      </span>
+                      {e.location && (
+                        <span className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {e.location}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isUser(role) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive shrink-0 h-8 w-8"
+                      onClick={() => deleteMut.mutate(e.id)}
+                      data-ocid={`events.delete_button.${i + 1}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              {e.description && (
+                <CardContent className="pt-0">
+                  <p className="text-sm leading-relaxed">{e.description}</p>
+                </CardContent>

@@ -1,0 +1,300 @@
+      )}
+      {isLoading && (
+        <div
+          className="flex justify-center py-8"
+          data-ocid="news.loading_state"
+        >
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && sorted.length === 0 && (
+        <div data-ocid="news.empty_state">
+          <EmptyState
+            message="Новин поки немає. Будьте першим!"
+            icon={<Newspaper />}
+          />
+        </div>
+      )}
+      <div className="space-y-4">
+        {sorted.map((n, i) => (
+          <motion.div
+            key={String(n.id)}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05 }}
+          >
+            <Card
+              className="shadow-card hover:shadow-md transition-shadow"
+              data-ocid={`news.item.${i + 1}`}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <CardTitle className="font-display text-lg leading-snug">
+                    {n.title}
+                  </CardTitle>
+                  {isUser(role) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive shrink-0 h-8 w-8"
+                      onClick={() => deleteMut.mutate(n.id)}
+                      data-ocid={`news.delete_button.${i + 1}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+                <CardDescription className="text-xs flex gap-2 items-center">
+                  <User className="w-3 h-3" />
+                  {truncatePrincipal(n.author)} · {formatTimestamp(n.timestamp)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {n.body}
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Announcements Tab ─────────────────────────────────────────────────────────
+
+function AnnouncementsTab({ role }: { role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const { data: announcements = [], isLoading } = useQuery<Announcement[]>({
+    queryKey: ["announcements"],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getAnnouncements() : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createAnnouncement(title, text),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+      setTitle("");
+      setText("");
+      setShowForm(false);
+      toast.success("Оголошення опубліковано");
+    },
+    onError: () => toast.error("Помилка"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: bigint) =>
+      (actor as unknown as CommunityBackend).deleteAnnouncement(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+      toast.success("Видалено");
+    },
+  });
+
+  const sorted = [...announcements].sort((a, b) =>
+    Number(b.timestamp - a.timestamp),
+  );
+
+  return (
+    <div className="space-y-4">
+      {isUser(role) && (
+        <div>
+          {!showForm ? (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="gap-2"
+              data-ocid="announcements.open_modal_button"
+            >
+              <Plus className="w-4 h-4" /> Додати оголошення
+            </Button>
+          ) : (
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-base font-display">
+                  Нове оголошення
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Заголовок"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  data-ocid="announcements.input"
+                />
+                <Textarea
+                  placeholder="Текст оголошення..."
+                  rows={3}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  data-ocid="announcements.textarea"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => createMut.mutate()}
+                    disabled={!title || !text || createMut.isPending}
+                    data-ocid="announcements.submit_button"
+                  >
+                    {createMut.isPending && (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Опублікувати
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowForm(false)}
+                    data-ocid="announcements.cancel_button"
+                  >
+                    Скасувати
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+      {isLoading && (
+        <div
+          className="flex justify-center py-8"
+          data-ocid="announcements.loading_state"
+        >
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && sorted.length === 0 && (
+        <div data-ocid="announcements.empty_state">
+          <EmptyState message="Оголошень поки немає" icon={<Megaphone />} />
+        </div>
+      )}
+      <div className="space-y-3">
+        {sorted.map((a, i) => (
+          <motion.div
+            key={String(a.id)}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04 }}
+          >
+            <Card
+              className="border-l-4 border-l-accent shadow-card"
+              data-ocid={`announcements.item.${i + 1}`}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-2">
+                  <CardTitle className="font-display text-base">
+                    {a.title}
+                  </CardTitle>
+                  {isUser(role) && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive shrink-0 h-8 w-8"
+                      onClick={() => deleteMut.mutate(a.id)}
+                      data-ocid={`announcements.delete_button.${i + 1}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+                <CardDescription className="text-xs">
+                  {truncatePrincipal(a.author)} · {formatTimestamp(a.timestamp)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                  {a.text}
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Forum Tab ─────────────────────────────────────────────────────────────────
+
+function ForumReplies({
+  topicId,
+  role,
+}: { topicId: bigint; role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [replyBody, setReplyBody] = useState("");
+
+  const { data: replies = [], isLoading } = useQuery<ForumReply[]>({
+    queryKey: ["replies", String(topicId)],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getReplies(topicId) : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createReply(topicId, replyBody),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["replies", String(topicId)] });
+      setReplyBody("");
+      toast.success("Відповідь додано");
+    },
+    onError: () => toast.error("Помилка"),
+  });
+
+  const sorted = [...replies].sort((a, b) => Number(a.timestamp - b.timestamp));
+
+  return (
+    <div className="space-y-3 mt-4">
+      <Separator />
+      <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+        Відповіді
+      </h3>
+      {isLoading && <Loader2 className="animate-spin text-primary w-5 h-5" />}
+      {!isLoading && sorted.length === 0 && (
+        <p className="text-sm text-muted-foreground">Відповідей ще немає</p>
+      )}
+      {sorted.map((r, i) => (
+        <div
+          key={String(r.id)}
+          className="bg-muted/50 rounded-md p-3"
+          data-ocid={`forum.item.${i + 1}`}
+        >
+          <p className="text-sm whitespace-pre-wrap">{r.body}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {truncatePrincipal(r.author)} · {formatTimestamp(r.timestamp)}
+          </p>
+        </div>
+      ))}
+      {!isGuest(role) && (
+        <div className="space-y-2 pt-2">
+          <Textarea
+            placeholder="Написати відповідь..."
+            rows={3}
+            value={replyBody}
+            onChange={(e) => setReplyBody(e.target.value)}
+            data-ocid="forum.textarea"
+          />
+          <Button
+            size="sm"
+            onClick={() => createMut.mutate()}
+            disabled={!replyBody || createMut.isPending}
+            data-ocid="forum.submit_button"
+          >
+            {createMut.isPending && (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            )}
+            Відповісти
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+

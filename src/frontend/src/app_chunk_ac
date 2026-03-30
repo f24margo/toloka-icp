@@ -1,0 +1,300 @@
+function ForumTab({ role }: { role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [selectedTopic, setSelectedTopic] = useState<ForumTopic | null>(null);
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const { data: topics = [], isLoading } = useQuery<ForumTopic[]>({
+    queryKey: ["topics"],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getTopics() : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createTopic(title, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["topics"] });
+      setTitle("");
+      setBody("");
+      setShowForm(false);
+      toast.success("Тему створено");
+    },
+    onError: () => toast.error("Помилка"),
+  });
+
+  const sorted = [...topics].sort((a, b) => Number(b.timestamp - a.timestamp));
+
+  if (selectedTopic) {
+    return (
+      <div className="space-y-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setSelectedTopic(null)}
+          className="gap-1"
+          data-ocid="forum.secondary_button"
+        >
+          <ArrowLeft className="w-4 h-4" /> Назад до тем
+        </Button>
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-display text-xl">
+              {selectedTopic.title}
+            </CardTitle>
+            <CardDescription>
+              {truncatePrincipal(selectedTopic.author)} ·{" "}
+              {formatTimestamp(selectedTopic.timestamp)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+              {selectedTopic.body}
+            </p>
+            <ForumReplies topicId={selectedTopic.id} role={role} />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {!isGuest(role) && (
+        <div>
+          {!showForm ? (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="gap-2"
+              data-ocid="forum.open_modal_button"
+            >
+              <Plus className="w-4 h-4" /> Нова тема
+            </Button>
+          ) : (
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-base font-display">
+                  Нова тема
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Назва теми"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  data-ocid="forum.input"
+                />
+                <Textarea
+                  placeholder="Опис теми..."
+                  rows={4}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => createMut.mutate()}
+                    disabled={!title || !body || createMut.isPending}
+                    data-ocid="forum.primary_button"
+                  >
+                    {createMut.isPending && (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Створити тему
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowForm(false)}
+                    data-ocid="forum.cancel_button"
+                  >
+                    Скасувати
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+      {isLoading && (
+        <div
+          className="flex justify-center py-8"
+          data-ocid="forum.loading_state"
+        >
+          <Loader2 className="animate-spin text-primary" />
+        </div>
+      )}
+      {!isLoading && sorted.length === 0 && (
+        <div data-ocid="forum.empty_state">
+          <EmptyState
+            message="Форум порожній. Розпочніть першу тему!"
+            icon={<MessageSquare />}
+          />
+        </div>
+      )}
+      <div className="space-y-3">
+        {sorted.map((t, i) => (
+          <motion.div
+            key={String(t.id)}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.04 }}
+          >
+            <Card
+              className="shadow-card hover:shadow-md transition-shadow cursor-pointer"
+              onClick={() => setSelectedTopic(t)}
+              data-ocid={`forum.item.${i + 1}`}
+            >
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-base hover:text-primary transition-colors">
+                    {t.title}
+                  </CardTitle>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                </div>
+                <CardDescription className="text-xs">
+                  {truncatePrincipal(t.author)} · {formatTimestamp(t.timestamp)}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {t.body}
+                </p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Polls Tab ─────────────────────────────────────────────────────────────────
+
+function PollCard({
+  poll,
+  role,
+  index,
+}: { poll: Poll; role: UserRole | null; index: number }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+
+  const { data: resultsArr, isLoading } = useQuery<[] | [PollResults]>({
+    queryKey: ["poll-results", String(poll.id)],
+    queryFn: async () =>
+      actor
+        ? (actor as unknown as CommunityBackend).getPollResults(poll.id)
+        : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const results: PollResults | null | undefined =
+    resultsArr && resultsArr.length > 0 ? resultsArr[0] : null;
+  const userVoted = results
+    ? results.userVoted.length > 0
+      ? Number(results.userVoted[0])
+      : null
+    : null;
+  const totalVotes = results
+    ? results.votes.reduce((s, v) => s + Number(v), 0)
+    : 0;
+
+  const voteMut = useMutation({
+    mutationFn: (optIdx: number) =>
+      (actor as unknown as CommunityBackend).vote(poll.id, BigInt(optIdx)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["poll-results", String(poll.id)] });
+      toast.success("Ваш голос зараховано!");
+    },
+    onError: () => toast.error("Помилка голосування"),
+  });
+
+  const canVote = !isGuest(role) && userVoted === null && !voteMut.isPending;
+
+  return (
+    <Card className="shadow-card" data-ocid={`polls.item.${index + 1}`}>
+      <CardHeader className="pb-3">
+        <CardTitle className="font-display text-base leading-snug">
+          {poll.question}
+        </CardTitle>
+        <CardDescription className="text-xs">
+          {truncatePrincipal(poll.author)} · {formatTimestamp(poll.timestamp)}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading && <Loader2 className="animate-spin text-primary w-4 h-4" />}
+        {poll.options.map((opt, i) => {
+          const votes = results ? Number(results.votes[i] ?? 0n) : 0;
+          const pct =
+            totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+          const isChosen = userVoted === i;
+          return (
+            <div key={opt} className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => canVote && voteMut.mutate(i)}
+                  disabled={!canVote}
+                  className={`text-sm text-left flex-1 transition-colors ${
+                    canVote
+                      ? "hover:text-primary cursor-pointer"
+                      : "cursor-default"
+                  } ${isChosen ? "font-semibold text-primary" : ""}`}
+                  data-ocid="polls.toggle"
+                >
+                  {opt}
+                </button>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {pct}% ({votes})
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                <motion.div
+                  className={`h-2 rounded-full ${isChosen ? "bg-primary" : "bg-accent"}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${pct}%` }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                />
+              </div>
+            </div>
+          );
+        })}
+        {userVoted !== null && (
+          <p className="text-xs text-muted-foreground pt-1">
+            ✓ Ви проголосували · {totalVotes} голосів
+          </p>
+        )}
+        {isGuest(role) && (
+          <p className="text-xs text-muted-foreground">
+            Увійдіть, щоб проголосувати
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PollsTab({ role }: { role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [question, setQuestion] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+  const [showForm, setShowForm] = useState(false);
+
+  const { data: polls = [], isLoading } = useQuery<Poll[]>({
+    queryKey: ["polls"],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getPolls() : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createPoll(
+        question,
+        options.filter(Boolean),
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["polls"] });
+      setQuestion("");

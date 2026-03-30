@@ -1,0 +1,300 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Toaster } from "@/components/ui/sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import type { Principal } from "@icp-sdk/core/principal";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowLeft,
+  BarChart2,
+  Building2,
+  Calendar,
+  CalendarDays,
+  ChevronRight,
+  Loader2,
+  LogIn,
+  LogOut,
+  MapPin,
+  Megaphone,
+  MessageSquare,
+  Newspaper,
+  Phone,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  User,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+
+// Local type definitions matching backend.d.ts
+type UserRole = { admin: null } | { user: null } | { guest: null };
+interface NewsPost {
+  id: bigint;
+  title: string;
+  body: string;
+  author: Principal;
+  timestamp: bigint;
+}
+interface Announcement {
+  id: bigint;
+  title: string;
+  text: string;
+  author: Principal;
+  timestamp: bigint;
+}
+interface ForumTopic {
+  id: bigint;
+  title: string;
+  body: string;
+  author: Principal;
+  timestamp: bigint;
+}
+interface ForumReply {
+  id: bigint;
+  topicId: bigint;
+  body: string;
+  author: Principal;
+  timestamp: bigint;
+}
+interface Poll {
+  id: bigint;
+  question: string;
+  options: string[];
+  author: Principal;
+  timestamp: bigint;
+}
+interface PollResults {
+  pollId: bigint;
+  question: string;
+  options: string[];
+  votes: bigint[];
+  userVoted: [] | [bigint];
+}
+interface Event {
+  id: bigint;
+  title: string;
+  description: string;
+  date: string;
+  location: string;
+  author: Principal;
+  timestamp: bigint;
+}
+interface Service {
+  id: bigint;
+  name: string;
+  category: string;
+  phone: string;
+  description: string;
+}
+interface CommunityBackend {
+  _initializeAccessControlWithSecret(secret: string): Promise<void>;
+  getCallerUserRole(): Promise<UserRole>;
+  isCallerAdmin(): Promise<boolean>;
+  createNews(title: string, body: string): Promise<bigint>;
+  getNews(): Promise<NewsPost[]>;
+  deleteNews(id: bigint): Promise<void>;
+  createAnnouncement(title: string, text: string): Promise<bigint>;
+  getAnnouncements(): Promise<Announcement[]>;
+  deleteAnnouncement(id: bigint): Promise<void>;
+  createTopic(title: string, body: string): Promise<bigint>;
+  getTopics(): Promise<ForumTopic[]>;
+  createReply(topicId: bigint, body: string): Promise<bigint>;
+  getReplies(topicId: bigint): Promise<ForumReply[]>;
+  createPoll(question: string, options: string[]): Promise<bigint>;
+  getPolls(): Promise<Poll[]>;
+  vote(pollId: bigint, optionIndex: bigint): Promise<void>;
+  getPollResults(pollId: bigint): Promise<[] | [PollResults]>;
+  createEvent(
+    title: string,
+    description: string,
+    date: string,
+    location: string,
+  ): Promise<bigint>;
+  getEvents(): Promise<Event[]>;
+  deleteEvent(id: bigint): Promise<void>;
+  createService(
+    name: string,
+    category: string,
+    phone: string,
+    description: string,
+  ): Promise<bigint>;
+  getServices(): Promise<Service[]>;
+  deleteService(id: bigint): Promise<void>;
+}
+import { useActor } from "./hooks/useActor";
+import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { getSecretParameter } from "./utils/urlParams";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatTimestamp(ts: bigint): string {
+  const ms = Number(ts / 1_000_000n);
+  const diff = Date.now() - ms;
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) return "щойно";
+  if (mins < 60) return `${mins} хв тому`;
+  if (hours < 24) return `${hours} год тому`;
+  if (days < 7) return `${days} дн тому`;
+  return new Date(ms).toLocaleDateString("uk-UA");
+}
+
+function truncatePrincipal(p: { toString(): string }): string {
+  const s = p.toString();
+  return s.length > 12 ? `${s.slice(0, 6)}...${s.slice(-4)}` : s;
+}
+
+function isAdmin(role: UserRole | null): boolean {
+  return role !== null && "admin" in role;
+}
+
+function isUser(role: UserRole | null): boolean {
+  return role !== null && ("admin" in role || "user" in role);
+}
+
+function isGuest(role: UserRole | null): boolean {
+  return role === null || "guest" in role;
+}
+
+function RoleBadge({ role }: { role: UserRole | null }) {
+  if (!role) return null;
+  if ("admin" in role)
+    return (
+      <Badge className="bg-primary text-primary-foreground text-xs">
+        Адмін
+      </Badge>
+    );
+  if ("user" in role)
+    return (
+      <Badge variant="secondary" className="text-xs">
+        Модератор
+      </Badge>
+    );
+  return (
+    <Badge variant="outline" className="text-xs">
+      Учасник
+    </Badge>
+  );
+}
+
+function EmptyState({
+  message,
+  icon,
+}: { message: string; icon?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+      {icon && <div className="text-4xl opacity-40">{icon}</div>}
+      <p className="text-sm">{message}</p>
+    </div>
+  );
+}
+
+// ── News Tab ──────────────────────────────────────────────────────────────────
+
+function NewsTab({ role }: { role: UserRole | null }) {
+  const { actor, isFetching } = useActor();
+  const qc = useQueryClient();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const { data: news = [], isLoading } = useQuery<NewsPost[]>({
+    queryKey: ["news"],
+    queryFn: async () =>
+      actor ? (actor as unknown as CommunityBackend).getNews() : [],
+    enabled: !!actor && !isFetching,
+  });
+
+  const createMut = useMutation({
+    mutationFn: () =>
+      (actor as unknown as CommunityBackend).createNews(title, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["news"] });
+      setTitle("");
+      setBody("");
+      setShowForm(false);
+      toast.success("Новину опубліковано");
+    },
+    onError: () => toast.error("Помилка при створенні"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: bigint) =>
+      (actor as unknown as CommunityBackend).deleteNews(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["news"] });
+      toast.success("Видалено");
+    },
+  });
+
+  const sorted = [...news].sort((a, b) => Number(b.timestamp - a.timestamp));
+
+  return (
+    <div className="space-y-4">
+      {isUser(role) && (
+        <div>
+          {!showForm ? (
+            <Button
+              onClick={() => setShowForm(true)}
+              className="gap-2"
+              data-ocid="news.open_modal_button"
+            >
+              <Plus className="w-4 h-4" /> Додати новину
+            </Button>
+          ) : (
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-base font-display">
+                  Нова новина
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input
+                  placeholder="Заголовок"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  data-ocid="news.input"
+                />
+                <Textarea
+                  placeholder="Текст новини..."
+                  rows={4}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  data-ocid="news.textarea"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => createMut.mutate()}
+                    disabled={!title || !body || createMut.isPending}
+                    data-ocid="news.submit_button"
+                  >
+                    {createMut.isPending && (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    )}
+                    Опублікувати
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setShowForm(false)}
+                    data-ocid="news.cancel_button"
+                  >
+                    Скасувати
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>

@@ -1,4 +1,12 @@
-/* eslint-disable */
+#!/usr/bin/env node
+// This script restores the hardcoded IDL for the backend canister.
+// It runs before vite build to prevent the Caffeine bindgen tool
+// from overwriting backend.did.js with an empty IDL.Service({}).
+
+const fs = require('fs');
+const path = require('path');
+
+const IDL_CONTENT = `/* eslint-disable */
 
 // @ts-nocheck
 // HARDCODED IDL - DO NOT OVERWRITE
@@ -150,3 +158,9 @@ export const idlFactory = ({ IDL }) => {
 };
 
 export const init = ({ IDL }) => { return []; };
+`;
+
+const destPath = path.join(__dirname, '../src/declarations/backend.did.js');
+fs.mkdirSync(path.dirname(destPath), { recursive: true });
+fs.writeFileSync(destPath, IDL_CONTENT, 'utf8');
+console.log('[restore-idl] backend.did.js restored with full IDL (' + Object.keys({}).length + ' records, all methods)');
