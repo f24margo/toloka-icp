@@ -1,0 +1,102 @@
+type UserRole = 
+ variant {
+   admin;
+   guest;
+   user;
+ };
+type Service = 
+ record {
+   category: text;
+   description: text;
+   id: nat;
+   name: text;
+   phone: text;
+ };
+type PollResults = 
+ record {
+   options: vec text;
+   pollId: nat;
+   question: text;
+   userVoted: opt nat;
+   votes: vec nat;
+ };
+type Poll = 
+ record {
+   author: principal;
+   id: nat;
+   options: vec text;
+   question: text;
+   timestamp: int;
+ };
+type NewsPost = 
+ record {
+   author: principal;
+   body: text;
+   id: nat;
+   timestamp: int;
+   title: text;
+ };
+type ForumTopic = 
+ record {
+   author: principal;
+   body: text;
+   id: nat;
+   timestamp: int;
+   title: text;
+ };
+type ForumReply = 
+ record {
+   author: principal;
+   body: text;
+   id: nat;
+   timestamp: int;
+   topicId: nat;
+ };
+type Event = 
+ record {
+   author: principal;
+   date: text;
+   description: text;
+   id: nat;
+   location: text;
+   timestamp: int;
+   title: text;
+ };
+type Community = 
+ service {
+   _initializeAccessControlWithSecret: (userSecret: text) -> ();
+   assignCallerUserRole: (user: principal, role: UserRole) -> ();
+   createAnnouncement: (title: text, "text": text) -> (nat);
+   createEvent: (title: text, description: text, date: text, location:
+    text) -> (nat);
+   createNews: (title: text, body: text) -> (nat);
+   createPoll: (question: text, options: vec text) -> (nat);
+   createReply: (topicId: nat, body: text) -> (nat);
+   createService: (name: text, category: text, phone: text, description:
+    text) -> (nat);
+   createTopic: (title: text, body: text) -> (nat);
+   deleteAnnouncement: (id: nat) -> ();
+   deleteEvent: (id: nat) -> ();
+   deleteNews: (id: nat) -> ();
+   deleteService: (id: nat) -> ();
+   getAnnouncements: () -> (vec Announcement) query;
+   getCallerUserRole: () -> (UserRole) query;
+   getEvents: () -> (vec Event) query;
+   getNews: () -> (vec NewsPost) query;
+   getPollResults: (pollId: nat) -> (opt PollResults) query;
+   getPolls: () -> (vec Poll) query;
+   getReplies: (topicId: nat) -> (vec ForumReply) query;
+   getServices: () -> (vec Service) query;
+   getTopics: () -> (vec ForumTopic) query;
+   isCallerAdmin: () -> (bool) query;
+   vote: (pollId: nat, optionIndex: nat) -> ();
+ };
+type Announcement = 
+ record {
+   author: principal;
+   id: nat;
+   "text": text;
+   timestamp: int;
+   title: text;
+ };
+service : () -> Community
