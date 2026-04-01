@@ -51,4 +51,6 @@ export interface backendInterface {
   createService(name: string, category: string, phone: string, description: string): Promise<bigint>;
   getServices(): Promise<Service[]>;
   deleteService(id: bigint): Promise<void>;
+  listUsers(): Promise<[string, string][]>;
+  setUserRole(target: string, role: string): Promise<void>;
 }

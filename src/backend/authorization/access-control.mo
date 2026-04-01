@@ -1,6 +1,7 @@
 import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
+import Array "mo:core/Array";
 
 module {
   public type UserRole = {
@@ -51,6 +52,7 @@ module {
     if (not (isAdmin(state, caller))) {
       Runtime.trap("Unauthorized: Only admins can assign user roles");
     };
+    state.userRoles.remove(user);
     state.userRoles.add(user, role);
   };
 
@@ -63,5 +65,18 @@ module {
 
   public func isAdmin(state : AccessControlState, caller : Principal) : Bool {
     getUserRole(state, caller) == #admin;
+  };
+
+  public func listUsers(state : AccessControlState) : [(Principal, Text)] {
+    let arr = state.userRoles.toArray();
+    Array.tabulate<(Principal, Text)>(arr.size(), func(i) {
+      let (p, r) = arr[i];
+      let roleText = switch (r) {
+        case (#admin) { "admin" };
+        case (#user) { "user" };
+        case (#guest) { "guest" };
+      };
+      (p, roleText)
+    })
   };
 };

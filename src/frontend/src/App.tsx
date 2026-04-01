@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   Trash2,
   User,
+  Users,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -162,6 +163,8 @@ interface CommunityBackend {
   ): Promise<bigint>;
   getServices(): Promise<Service[]>;
   deleteService(id: bigint): Promise<void>;
+  listUsers(): Promise<[string, string][]>;
+  setUserRole(target: string, role: string): Promise<void>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1470,6 +1473,45 @@ function ServicesTab({ role }: { role: UserRole | null }) {
 
 function AdminTab() {
   const { t } = useLanguage();
+  const { actor, isFetching } = useActor();
+  const [roleSelections, setRoleSelections] = useState<Record<string, string>>(
+    {},
+  );
+  const [savingPrincipal, setSavingPrincipal] = useState<string | null>(null);
+
+  const {
+    data: users = [],
+    isLoading: usersLoading,
+    refetch: refetchUsers,
+  } = useQuery<[string, string][]>({
+    queryKey: ["users"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return (actor as unknown as CommunityBackend).listUsers();
+    },
+    enabled: !!actor && !isFetching,
+  });
+
+  const handleRoleChange = (principal: string, role: string) => {
+    setRoleSelections((prev) => ({ ...prev, [principal]: role }));
+  };
+
+  const handleSaveRole = async (principal: string) => {
+    if (!actor) return;
+    const role = roleSelections[principal];
+    if (!role) return;
+    setSavingPrincipal(principal);
+    try {
+      await (actor as unknown as CommunityBackend).setUserRole(principal, role);
+      await refetchUsers();
+      toast.success("Роль збережено");
+    } catch {
+      toast.error("Помилка збереження ролі");
+    } finally {
+      setSavingPrincipal(null);
+    }
+  };
+
   return (
     <div className="space-y-4" data-ocid="admin.panel">
       <Card className="shadow-card border-primary/20">
@@ -1525,6 +1567,88 @@ function AdminTab() {
               <li>{t("admin_tip_4")}</li>
             </ol>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="shadow-card" data-ocid="admin.users_section">
+        <CardHeader>
+          <CardTitle className="font-display flex items-center gap-2 text-base">
+            <Users className="w-4 h-4 text-primary" /> Користувачі{" "}
+            {!usersLoading && (
+              <Badge variant="secondary" className="ml-1">
+                {users.length}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {usersLoading ? (
+            <div className="flex justify-center py-4">
+              <Loader2 className="animate-spin text-primary" />
+            </div>
+          ) : users.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Немає зареєстрованих користувачів
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 pr-4 font-medium text-muted-foreground">
+                      Principal
+                    </th>
+                    <th className="text-left py-2 pr-4 font-medium text-muted-foreground">
+                      Роль
+                    </th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">
+                      Дії
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map(([principal, role]) => (
+                    <tr key={principal} className="border-b last:border-0">
+                      <td className="py-2 pr-4 font-mono text-xs break-all max-w-[200px]">
+                        {principal}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <select
+                          className="border rounded px-2 py-1 text-sm bg-background"
+                          value={roleSelections[principal] ?? role}
+                          onChange={(e) =>
+                            handleRoleChange(principal, e.target.value)
+                          }
+                        >
+                          <option value="admin">admin</option>
+                          <option value="user">user</option>
+                          <option value="guest">guest</option>
+                        </select>
+                      </td>
+                      <td className="py-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleSaveRole(principal)}
+                          disabled={
+                            savingPrincipal === principal ||
+                            !(
+                              roleSelections[principal] &&
+                              roleSelections[principal] !== role
+                            )
+                          }
+                        >
+                          {savingPrincipal === principal && (
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          )}
+                          Зберегти
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

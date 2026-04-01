@@ -105,6 +105,8 @@ export const idlService = IDL.Service({
   createService: IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [IDL.Nat], []),
   getServices: IDL.Func([], [IDL.Vec(Service)], ['query']),
   deleteService: IDL.Func([IDL.Nat], [], []),
+  listUsers: IDL.Func([], [IDL.Vec(IDL.Tuple(IDL.Principal, IDL.Text))], ['query']),
+  setUserRole: IDL.Func([IDL.Principal, IDL.Text], [], []),
 });
 
 export const idlInitArgs = [];
@@ -146,6 +148,8 @@ export const idlFactory = ({ IDL }) => {
     createService: IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [IDL.Nat], []),
     getServices: IDL.Func([], [IDL.Vec(Service)], ['query']),
     deleteService: IDL.Func([IDL.Nat], [], []),
+    listUsers: IDL.Func([], [IDL.Vec(IDL.Tuple(IDL.Principal, IDL.Text))], ['query']),
+    setUserRole: IDL.Func([IDL.Principal, IDL.Text], [], []),
   });
 };
 

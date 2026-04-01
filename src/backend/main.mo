@@ -279,4 +279,20 @@ actor class Community() = this {
     accessControlState.adminAssigned := true;
   };
 
+  // ── User Management ────────────────────────────────────────────────────────
+  public shared query ({ caller }) func listUsers() : async [(Principal, Text)] {
+    assert(AccessControl.isAdmin(accessControlState, caller));
+    AccessControl.listUsers(accessControlState)
+  };
+
+  public shared ({ caller }) func setUserRole(target: Principal, role: Text) : async () {
+    assert(AccessControl.isAdmin(accessControlState, caller));
+    let userRole : UserRole = switch(role) {
+      case ("admin") { #admin };
+      case ("user") { #user };
+      case (_) { #guest };
+    };
+    AccessControl.assignRole(accessControlState, caller, target, userRole);
+  };
+
 };
